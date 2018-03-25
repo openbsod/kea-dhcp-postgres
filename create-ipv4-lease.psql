@@ -1,0 +1,48 @@
+cat kea-postgres
+
+START TRANSACTION;
+\set ipv4_reservation '10.20.29.41'
+\set hostname 'test.dhcp.pin'
+\set identifier_type 'hw-address'
+\set identifier_value '12:17:3E:26:C8:B4'
+\set dhcp4_subnet_id 1
+
+INSERT INTO hosts (dhcp_identifier,
+                   dhcp_identifier_type,
+				   dhcp4_subnet_id,
+                   ipv4_address,
+                   hostname)
+VALUES (DECODE(REPLACE(:'identifier_value', ':', ''), 'hex'),
+		(SELECT type FROM host_identifier_type WHERE name=:'identifier_type'),
+        :dhcp4_subnet_id,
+        (SELECT (:'ipv4_reservation'::inet - '0.0.0.0'::inet)),
+        :'hostname');
+
+SELECT LASTVAL() INTO lastval;
+
+\set scope_name 'subnet'
+
+\set dns_servers_option_code 5
+\set dns_servers_option_value1 '10.20.29.3'
+\set dns_servers_option_value2 '10.20.29.53'
+
+INSERT INTO dhcp4_options (code, value, space, host_id, scope_id)
+VALUES (:dns_servers_option_code,
+        (SELECT DECODE(to_hex((:'dns_servers_option_value1'::inet - '0.0.0.0'::inet)::bigint) || to_hex((:'dns_servers_option_value2'::inet - '0.0.0.0'::inet)::bigint), 'hex')),
+        'dhcp4',
+		(SELECT lastval FROM lastval),
+        (SELECT scope_id FROM dhcp_option_scope WHERE scope_name = :'scope_name'));
+
+\set router_option_code 3
+\set router_option_value '10.20.29.1'
+
+INSERT INTO dhcp4_options (code, formatted_value, space, host_id, scope_id)
+VALUES (:router_option_code,
+        :'router_option_value',
+        'dhcp4',
+		(SELECT lastval FROM lastval),
+        (SELECT scope_id FROM dhcp_option_scope WHERE scope_name = :'scope_name'));
+
+DROP TABLE lastval;
+
+COMMIT;
